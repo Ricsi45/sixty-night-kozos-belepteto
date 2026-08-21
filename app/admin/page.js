@@ -95,8 +95,7 @@ export default function Admin() {
         <input
           type="file"
           accept=".json,application/json"
-          onChange={upload}
-        />
+                  />
 
         <div className="small">
           {msg}
