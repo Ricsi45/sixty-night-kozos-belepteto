@@ -21,35 +21,7 @@ export default function Admin() {
     load();
   }, []);
 
-  async function upload(e) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-
-    try {
-      const d = JSON.parse(await f.text());
-
-      const r = await fetch("/api/import", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(d)
-      });
-
-      const j = await r.json();
-
-      if (!j.ok) {
-        throw Error(j.error);
-      }
-
-      setMsg(`${j.count} jegy feltöltve/frissítve a közös adatbázisban.`);
-      load();
-    } catch (x) {
-      setMsg("Hiba: " + x.message);
-    }
-
-    e.target.value = "";
-  }
+  
 
   const used = tickets.filter(t => t.used_at).length;
   const remaining = tickets.length - used;
