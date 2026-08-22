@@ -3,26 +3,24 @@
 import {useEffect,useRef,useState} from "react";
 
 export default function Home(){
-  const [stats,setStats]=useState({under:0,over:0,total:0});
-  const [message,setMessage]=useState("A kezdéshez engedélyezd a kamerát.");
-  const [messageType,setMessageType]=useState("");
-  const video=useRef(null), canvas=useRef(null), stream=useRef(null);
-  const running=useRef(false), locked=useRef(false), last=useRef("");
+  const [msg,setMsg]=useState("Jegylista nincs betöltve.");
+  const [result,setResult]=useState(null);
+  const [stats,setStats]=useState({total:0,used:0,unused:0});
+  const video=useRef(null), canvas=useRef(null), stream=useRef(null), running=useRef(false);
+
+  async function init(){
+    await fetch("/api/init",{method:"POST"});
+    refresh();
+  }
 
   async function refresh(){
-    try{
-      const r=await fetch("/api/stats",{cache:"no-store"});
-      const j=await r.json();
-      if(j.ok)setStats({
-        under:j.under||0,
-        over:j.over||0,
-        total:j.total||0
-      });
-    }catch{}
+    const r=await fetch("/api/stats",{cache:"no-store"});
+    const j=await r.json();
+    if(j.ok)setStats(j);
   }
 
   useEffect(()=>{
-    refresh();
+    init();
     return ()=>stop();
   },[]);
 
@@ -36,37 +34,44 @@ export default function Home(){
 
       const j=await r.json();
 
-      if(j.status==="under"){
-        show("🟢 18 ÉV ALATTI KARSZALAG +1","under");
-      }else if(j.status==="over"){
-        show("🔴 18+ KARSZALAG +1","over");
+      if(j.status==="valid"){
+        setResult({
+          ok:true,
+          title:"ÉRVÉNYES JEGY",
+          name:j.guest_name,
+          info:`Sorszám: ${j.serial}<br>Belépés: ${new Date(j.used_at).toLocaleString("hu-HU")}`
+        });
+      }else if(j.status==="used"){
+        setResult({
+          ok:false,
+          title:"MÁR FELHASZNÁLT JEGY",
+          name:j.guest_name,
+          info:`Sorszám: ${j.serial}<br>Első belépés: ${new Date(j.used_at).toLocaleString("hu-HU")}`
+        });
       }else{
-        show("❌ ISMERETLEN QR-KÓD – NEM SZÁMOLTAM","bad");
+        setResult({
+          ok:false,
+          title:"ÉRVÉNYTELEN JEGY",
+          name:"",
+          info:`Azonosító: ${j.ticket_id||qr}`
+        });
       }
 
       refresh();
-
       navigator.vibrate?.(
-        j.status==="under"||j.status==="over"
-        ?120
+        j.status==="valid"
+        ?180
         :[120,70,120]
       );
 
     }catch(e){
-      show("❌ HIBA: "+e.message,"bad");
+      setResult({
+        ok:false,
+        title:"HIBA",
+        name:"",
+        info:e.message
+      });
     }
-  }
-
-  function show(text,type){
-    setMessage(text);
-    setMessageType(type);
-    locked.current=true;
-
-    setTimeout(()=>{
-      locked.current=false;
-      setMessage("Következő karszalag beolvasható.");
-      setMessageType("");
-    },1100);
   }
 
   async function start(){
@@ -87,9 +92,7 @@ export default function Home(){
 
       stream.current=await navigator.mediaDevices.getUserMedia({
         video:{
-          facingMode:{ideal:"environment"},
-          width:{ideal:1280},
-          height:{ideal:720}
+          facingMode:{ideal:"environment"}
         },
         audio:false
       });
@@ -98,15 +101,10 @@ export default function Home(){
       await video.current.play();
 
       running.current=true;
-      setMessage("Kamera aktív – tartsd elé a QR-kódot.");
-
       scan();
 
     }catch(e){
-      show(
-        "❌ A kamera nem engedélyezhető. Engedélyezd a kamerát a böngésző beállításaiban.",
-        "bad"
-      );
+      alert("Nem sikerült megnyitni a kamerát: "+e.message);
     }
   }
 
@@ -116,10 +114,6 @@ export default function Home(){
     stream.current?.getTracks().forEach(t=>t.stop());
 
     stream.current=null;
-
-    if(video.current){
-      video.current.srcObject=null;
-    }
   }
 
   function scan(){
@@ -129,7 +123,6 @@ export default function Home(){
     const c=canvas.current;
 
     if(v?.readyState>=2){
-
       c.width=v.videoWidth;
       c.height=v.videoHeight;
 
@@ -159,17 +152,10 @@ export default function Home(){
         }
       );
 
-      if(q && q.data!==last.current){
-
-        last.current=q.data;
-
-        if(!locked.current){
-          check(q.data);
-        }
-
-        setTimeout(()=>{
-          last.current="";
-        },1000);
+      if(q){
+        stop();
+        check(q.data);
+        return;
       }
     }
 
@@ -184,47 +170,34 @@ export default function Home(){
       </div>
 
       <div className="sub">
-        KARSZALAG-REGISZTRÁCIÓ
+        MULAT HATVAN · KÖZÖS QR-BELÉPTETŐ
       </div>
     </div>
 
-    <div className="statsGrid">
+    <div className="card">
+      <b>JEGYLISTA</b>
 
-      <div className="card green">
-        <div className="label">
-          🟢 18 év alatt
-        </div>
-
-        <div className="number">
-          {stats.under}
-        </div>
+      <div className="small">
+        A jegylista automatikusan a közös online adatbázisból töltődik be.
+        A beléptető telefonokon nincs fájlfeltöltés.
       </div>
 
-      <div className="card red">
-        <div className="label">
-          🔴 18+
-        </div>
-
-        <div className="number">
-          {stats.over}
-        </div>
-      </div>
-
+      <button onClick={refresh}>
+        🔄 LISTA FRISSÍTÉSE
+      </button>
     </div>
 
-    <div className="card total">
+    <div className="card">
 
-      <div className="label">
-        🎟️ Összes karszalag
-      </div>
+      <b>QR-KÓD BEOLVASÁSA</b>
 
-      <div className="number">
-        {stats.total}
-      </div>
+      <button onClick={start}>
+        📷 KAMERA MEGNYITÁSA
+      </button>
 
-    </div>
-
-    <div className="card scanCard">
+      <button onClick={stop}>
+        ⏹ KAMERA LEÁLLÍTÁSA
+      </button>
 
       <video
         ref={video}
@@ -237,29 +210,63 @@ export default function Home(){
         style={{display:"none"}}
       />
 
-      <button onClick={start}>
-        📷 KAMERA ENGEDÉLYEZÉSE
-      </button>
-
-      <div className={"status "+messageType}>
-        {message}
+      <div className="small">
+        A QR-ellenőrzés közvetlenül a közös online adatbázisból történik.
       </div>
 
     </div>
 
-    <button
-      className="reset"
-      onClick={refresh}
-    >
-      🔄 SZÁMLÁLÓ FRISSÍTÉSE
-    </button>
+    {result && (
+      <div className={"result "+(result.ok?"valid":"invalid")}>
 
-    <div className="small">
-      Közös online számláló: minden telefon ugyanazt az eredményt látja.
+        <div className="big">
+          {result.title}
+        </div>
+
+        <div className="name">
+          {result.name}
+        </div>
+
+        <div
+          dangerouslySetInnerHTML={{
+            __html:result.info
+          }}
+        />
+
+      </div>
+    )}
+
+    <div className="card">
+
+      <b>AKTUÁLIS BELÉPTETÉS</b>
+
+      <div className="stats">
+
+        <div className="stat">
+          <b>{stats.total}</b>
+          összes jegy
+        </div>
+
+        <div className="stat">
+          <b>{stats.used}</b>
+          belépett
+        </div>
+
+        <div className="stat">
+          <b>{stats.unused}</b>
+          hátra
+        </div>
+
+      </div>
+
     </div>
 
-    <div className="small">
-      🟢 Zöld QR = 18 év alatt · 🔴 Piros QR = 18+
+    <div className="card">
+      2026. szeptember 12. · Kapunyitás: <b>20:30</b>
+      <br/>
+      Sixty Night Party Park
+      <br/>
+      3000 Hatvan, Boldogi út 9. (2440 hrsz.)
     </div>
 
   </main>
