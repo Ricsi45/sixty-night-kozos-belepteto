@@ -8,22 +8,27 @@ export async function POST(req) {
   try {
     const { qr } = await req.json();
     const ticket_id = norm(qr);
-    if (!ticket_id) return Response.json({ ok:false, status:"invalid" }, {status:400});
+    if (!ticket_id) return Response.json({ ok:false, status:"invalid" }, { status:400 });
 
     const sql = db();
     await ensureSchema(sql);
 
     const rows = await sql`
-      SELECT ticket_id, serial, guest_name, used_at
-      FROM tickets
-      WHERE ticket_id = ${ticket_id}
-      LIMIT 1
+      SELECT ticket_id, serial, guest_name, used_at, invalid_at
+      FROM tickets WHERE ticket_id = ${ticket_id} LIMIT 1
     `;
-    if (!rows.length) {
-      return Response.json({ ok:true, status:"invalid", ticket_id });
-    }
+
+    if (!rows.length) return Response.json({ ok:true, status:"invalid", ticket_id });
 
     const t = rows[0];
+
+    if (t.invalid_at) {
+      return Response.json({
+        ok:true, status:"invalidated", ticket_id:t.ticket_id,
+        serial:t.serial, guest_name:t.guest_name, invalid_at:t.invalid_at
+      });
+    }
+
     if (t.used_at) {
       return Response.json({
         ok:true, status:"used", ticket_id:t.ticket_id,
@@ -32,24 +37,39 @@ export async function POST(req) {
     }
 
     const updated = await sql`
-      UPDATE tickets
-      SET used_at = NOW()
-      WHERE ticket_id = ${ticket_id} AND used_at IS NULL
-      RETURNING ticket_id, serial, guest_name, used_at
+      UPDATE tickets SET used_at = NOW()
+      WHERE ticket_id = ${ticket_id}
+        AND used_at IS NULL
+        AND invalid_at IS NULL
+      RETURNING ticket_id, serial, guest_name, used_at, invalid_at
     `;
 
     if (!updated.length) {
-      const again = await sql`SELECT ticket_id, serial, guest_name, used_at FROM tickets WHERE ticket_id=${ticket_id}`;
+      const again = await sql`
+        SELECT ticket_id, serial, guest_name, used_at, invalid_at
+        FROM tickets WHERE ticket_id=${ticket_id}
+      `;
       const a = again[0];
-      return Response.json({ok:true,status:"used",ticket_id:a.ticket_id,serial:a.serial,guest_name:a.guest_name,used_at:a.used_at});
+
+      if (a?.invalid_at) {
+        return Response.json({
+          ok:true, status:"invalidated", ticket_id:a.ticket_id,
+          serial:a.serial, guest_name:a.guest_name, invalid_at:a.invalid_at
+        });
+      }
+
+      return Response.json({
+        ok:true, status:"used", ticket_id:a.ticket_id,
+        serial:a.serial, guest_name:a.guest_name, used_at:a.used_at
+      });
     }
 
     const a = updated[0];
     return Response.json({
-      ok:true,status:"valid",ticket_id:a.ticket_id,
-      serial:a.serial,guest_name:a.guest_name,used_at:a.used_at
+      ok:true, status:"valid", ticket_id:a.ticket_id,
+      serial:a.serial, guest_name:a.guest_name, used_at:a.used_at
     });
   } catch (e) {
-    return Response.json({ ok:false, error:e.message }, {status:500});
+    return Response.json({ ok:false, error:e.message }, { status:500 });
   }
 }
