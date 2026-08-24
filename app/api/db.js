@@ -14,7 +14,13 @@ export async function ensureSchema(sql) {
       serial TEXT,
       guest_name TEXT,
       used_at TIMESTAMPTZ NULL,
+      invalid_at TIMESTAMPTZ NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `;
+
+  await sql`
+    ALTER TABLE tickets
+    ADD COLUMN IF NOT EXISTS invalid_at TIMESTAMPTZ NULL
   `;
 }
