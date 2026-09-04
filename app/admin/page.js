@@ -69,6 +69,18 @@ export default function Admin(){
     }catch(e){setMsg(`Hiba: ${e.message}`)}finally{setAction(null)}
   }
 
+  async function deleteTicket(t){
+    const label=[t.serial,t.guest_name].filter(Boolean).join(" · ")||t.ticket_id;
+    if(!window.confirm(`FIGYELEM!\n\nVéglegesen törlöd ezt a jegyet?\n\n${label}\n\nEz a művelet nem vonható vissza.`))return;
+    setAction(`delete:${t.ticket_id}`);
+    try{
+      const r=await fetch("/api/tickets",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket_id:t.ticket_id})}),j=await r.json();
+      if(!r.ok||!j.ok)throw new Error(j.error);
+      setMsg("A jegy véglegesen törölve.");
+      await load();
+    }catch(e){setMsg(`Törlési hiba: ${e.message}`)}finally{setAction(null)}
+  }
+
   const used=tickets.filter(t=>t.used_at).length;
   const invalid=tickets.filter(t=>t.invalid_at).length;
   const remaining=tickets.length-used-invalid;
@@ -120,7 +132,8 @@ export default function Admin(){
       {visible.length===0?<div className="empty">Nincs a keresésnek megfelelő jegy.</div>:visible.map(t=><div key={t.ticket_id} className="ticket-row">
         <b>{t.serial||"-"}</b>{" · "}{t.guest_name||"Név nélkül"}<br/>
         <span className="small">{t.invalid_at?<>🔴 ÉRVÉNYTELEN<br/><b>Ok:</b> {t.invalid_reason||"Nincs megadva"}<br/><b>Időpont:</b> {new Date(t.invalid_at).toLocaleString("hu-HU")}</>:t.used_at?<>🟢 Belépett · {new Date(t.used_at).toLocaleString("hu-HU")}</>:"⚪ Nem lépett be"}</span><br/>
-        <button className="filter" disabled={action===t.ticket_id} onClick={()=>setValidity(t,!t.invalid_at)}>{action===t.ticket_id?"FELDOLGOZÁS...":t.invalid_at?"↩️ ÉRVÉNYESÍTÉS":"🚫 ÉRVÉNYTELENÍTÉS"}</button>
+        <button className="filter" disabled={action===t.ticket_id||action===`delete:${t.ticket_id}`} onClick={()=>setValidity(t,!t.invalid_at)}>{action===t.ticket_id?"FELDOLGOZÁS...":t.invalid_at?"↩️ ÉRVÉNYESÍTÉS":"🚫 ÉRVÉNYTELENÍTÉS"}</button>
+        <button className="filter" style={{marginTop:"8px",background:"#4b171d",borderColor:"#7f2a34"}} disabled={action===t.ticket_id||action===`delete:${t.ticket_id}`} onClick={()=>deleteTicket(t)}>{action===`delete:${t.ticket_id}`?"TÖRLÉS...":"🗑️ JEGY TÖRLÉSE"}</button>
       </div>)}
     </div>
   </main>
